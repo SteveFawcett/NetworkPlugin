@@ -1,5 +1,6 @@
 ﻿using Lextm.SharpSnmpLib;
 using Lextm.SharpSnmpLib.Messaging;
+using Microsoft.Extensions.Configuration;
 using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -27,6 +28,12 @@ namespace Networks.Classes
             public string? Name { get; set; }
             public string? Uptime { get; set; }
             public double MemoryUsedPercent { get; set; }
+        }
+
+        private readonly IConfiguration _configuration;
+        public NetworkScanner(IConfiguration configuration)
+        {
+            _configuration = configuration;
         }
         public int WalkMemoryTable(IPEndPoint endpoint, string community = "public", int timeoutMs = 1000)
         {

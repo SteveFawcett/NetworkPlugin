@@ -11,15 +11,23 @@ namespace Networks.Panels
 {
     public partial class NetworkPanel : UserControl, IInfoPage
     {
+        private string Subnet = "192.168.1";
         private event EventHandler<List<NetworkDevice>>? NetworkDataUpdated;
         private List<NetworkDevice> _activeIPs = [];
 
         private readonly ILogger<IPlugin> _logger;
         private readonly NetworkScanner _scanner;
-        public NetworkPanel(ILogger<IPlugin> logger, NetworkScanner scanner)
+        private readonly IConfiguration _configuration;
+
+        public NetworkPanel(IConfiguration configuration , ILogger<IPlugin> logger, NetworkScanner scanner)
         {
             _logger = logger;
             _scanner = scanner;
+            _configuration = configuration;
+
+            var Refresh = _configuration.GetValue<int?>("NetworkRefresh") ?? 60000;
+            var Update = _configuration.GetValue<int?>("NetworkUpdate") ?? 1000;
+            Subnet = _configuration.GetValue<string?>("NetworkSubnet") ?? "192.168.1";
 
             InitializeComponent();
 
@@ -31,14 +39,14 @@ namespace Networks.Panels
                 callback => LoadAsym() ,
                 null,
                 dueTime: 0,         // 🔥 Fire immediately
-                period: 60000       // Repeat every 60 seconds
+                period: Refresh
             );
 
             NetworkUpdateTimer = new System.Threading.Timer(
                 async _ => await UpdateAsync(),
                 null,
                 dueTime: 0,         // 🔥 Fire immediately
-                period: 1000       // Repeat every 60 seconds
+                period: Update
             );
         }
 
@@ -59,7 +67,7 @@ namespace Networks.Panels
 
         public void  LoadAsym(CancellationToken cancellationToken = default)
         {
-            _activeIPs = _scanner.ScanNetwork( "192.168.1" );
+            _activeIPs = _scanner.ScanNetwork( Subnet);
             _activeIPs = _activeIPs.OrderByDescending(d => d.MemoryUsedPercent).ToList();
       
             _logger.LogInformation("Network loaded with {Count} entries", _activeIPs.Count);

@@ -10,14 +10,14 @@ namespace Networks
 {
     public class PluginBase : BroadcastPluginBase 
     {
-        private const string STANZA = "NET";
+        private const string STANZA = "Network";
         private ILogger<IPlugin>? _logger;
         private IConfiguration? _configuration;
         private static NetworkPanel? _updateForm;
         public PluginBase() : base() { } //  0 Parameter plugin for registration purposes.
 
         public PluginBase(IConfiguration configuration, ILogger<IPlugin> logger) :
-            base(configuration, ListPage( configuration, logger ), Resources.red, STANZA)
+            base(configuration, ListPage( configuration, logger ), Resources.green, STANZA)
         {
             _logger = logger;
             _configuration = configuration;
@@ -25,9 +25,9 @@ namespace Networks
 
         public static NetworkPanel ListPage(IConfiguration configuration, ILogger<IPlugin> logger)
         {
-            var scanner = new NetworkScanner();
+            var scanner = new NetworkScanner(configuration);
          
-            _updateForm = new NetworkPanel(logger, scanner);
+            _updateForm = new NetworkPanel(configuration , logger, scanner);
 
             return _updateForm;
         }
