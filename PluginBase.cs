@@ -25,9 +25,9 @@ namespace Networks
 
         public static NetworkPanel ListPage(IConfiguration configuration, ILogger<IPlugin> logger)
         {
-            var scanner = new NetworkScanner(configuration);
+            var scanner = new NetworkScanner(configuration.GetSection(STANZA));
          
-            _updateForm = new NetworkPanel(configuration , logger, scanner);
+            _updateForm = new NetworkPanel(configuration.GetSection(STANZA) , logger, scanner);
 
             return _updateForm;
         }
