@@ -13,14 +13,15 @@ namespace Networks.Panels
         {
             ListNetwork = new ListView();
             lblTitle = new Label();
+            Interfaces = new ComboBox();
 
             Size = new Size(610, 450);
 
             // 
             // ListNetwork
             // 
-            ListNetwork.Location = new Point(10, 60);
-            ListNetwork.Size = new Size(600, 360);
+            ListNetwork.Location = new Point(10, 100);
+            ListNetwork.Size = new Size(600, 400);
             ListNetwork.BackColor = Color.White;
             ListNetwork.BorderStyle = BorderStyle.FixedSingle;
             ListNetwork.Font = new Font("Segoe UI", 10F, FontStyle.Regular);
@@ -40,13 +41,20 @@ namespace Networks.Panels
             lblTitle.TabIndex = 0;
             lblTitle.Text = "Network Details";
 
+            Interfaces.Location = new Point(10, 60);
+            Interfaces.Size = new Size(300, 25);
+            Interfaces.DropDownStyle = ComboBoxStyle.DropDownList;
+            Interfaces.Font = new Font("Segoe UI", 10F, FontStyle.Regular);
+
             this.Controls.Add(lblTitle);
             this.Controls.Add(ListNetwork);
+            this.Controls.Add(Interfaces);
         }
 
         #endregion
 
         private ListView ListNetwork;
+        private ComboBox Interfaces;
         private System.Threading.Timer NetworkRefreshTimer;
         private System.Threading.Timer NetworkUpdateTimer;    
         private Label lblTitle;

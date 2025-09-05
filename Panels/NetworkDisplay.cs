@@ -1,54 +1,100 @@
-﻿using BroadcastPluginSDK;
-using BroadcastPluginSDK.Interfaces;
+﻿using BroadcastPluginSDK.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+
 using Networks.Classes;
-using System.Diagnostics.Eventing.Reader;
-using System.Windows.Forms;
-using static Networks.Classes.NetworkScanner;
+using System.Net;
+using System.Net.NetworkInformation;
 
 namespace Networks.Panels
 {
     public partial class NetworkPanel : UserControl, IInfoPage
     {
-        private string Subnet = "192.168.1";
-        private event EventHandler<List<NetworkDevice>>? NetworkDataUpdated;
-        private List<NetworkDevice> _activeIPs = [];
+        private event EventHandler<HashSet<IPAddress>>? NetworkDataUpdated;
 
         private readonly ILogger<IPlugin> _logger;
-        private readonly NetworkScanner _scanner;
+        private readonly IPv4NetworkScanner _ipv4Scanner;
+        private readonly IPv6NetworkScanner _ipv6Scanner;
         private readonly IConfiguration _configuration;
+        private BoundList _devices;
 
-        public NetworkPanel(IConfiguration configuration , ILogger<IPlugin> logger, NetworkScanner scanner)
+        public NetworkPanel(IConfiguration configuration , ILogger<IPlugin> logger, IPv4NetworkScanner scanner , IPv6NetworkScanner scanner2)
         {
             _logger = logger;
-            _scanner = scanner;
+            _ipv4Scanner = scanner;
+            _ipv6Scanner = scanner2;
             _configuration = configuration;
+            _devices = new BoundList(configuration, logger);
 
-            var Refresh = _configuration.GetValue<int?>("NetworkRefresh") ?? 60000;
-            var Update = _configuration.GetValue<int?>("NetworkUpdate") ?? 1000;
-            Subnet = _configuration.GetValue<string?>("NetworkSubnet") ?? "192.168.1";
+            var Refresh = _configuration.GetValue<int?>("NetworkRefresh") ?? 1000;
+            var Update = _configuration.GetValue<int?>("NetworkUpdate") ?? 10000;
 
             InitializeComponent();
 
+            PopulateInterfaces();
             SetupListView();
+            FilterListView(Interfaces.Text);
 
-            NetworkDataUpdated += NetworkData;
-
-            NetworkRefreshTimer = new System.Threading.Timer(
-                callback => LoadAsym() ,
-                null,
-                dueTime: 0,         // 🔥 Fire immediately
-                period: Refresh
-            );
-
+            // With the following corrected code:
             NetworkUpdateTimer = new System.Threading.Timer(
-                async _ => await UpdateAsync(),
+                callback => LoadIPv6Async(),
                 null,
                 dueTime: 0,         // 🔥 Fire immediately
                 period: Update
             );
+
+            Interfaces.SelectedIndexChanged += (s, e) =>
+            {
+                FilterListView(Interfaces.Text);
+            };
+
+            _devices.DeviceAdded += (s, e) =>
+            {
+                _logger.LogDebug("Device Added: {IP} - {Name}", e.Device.IPAddress, e.Device.Name ?? "Unknown");
+
+                if (ListNetwork.InvokeRequired)
+                {
+                    ListNetwork.Invoke(new Action(() =>
+                    {
+                        FilterListView(Interfaces.Text);
+                    }));
+                }
+                else
+                {
+                    FilterListView(Interfaces.Text);
+                }
+            };
+
         }
+
+        public void FilterListView(string filterText)
+        {
+            if( filterText == "All Interfaces" )
+            {
+                filterText = string.Empty;
+            }
+
+            var filtered = _devices.Items
+                .Where(d => d.Name?.Contains(filterText, StringComparison.OrdinalIgnoreCase) == true
+                         || d.Interface.ToString().Contains(filterText))
+                .ToList();
+
+            ListNetwork.BeginUpdate();
+            ListNetwork.Items.Clear();
+
+            foreach (var device in filtered)
+            {
+                var item = new ListViewItem(device.IPAddress.ToString());
+                item.SubItems.Add(device.Name ?? "Unknown");
+                item.SubItems.Add(device.Uptime ?? "N/A");
+                item.SubItems.Add(device.MemoryUsedPercent?.ToString("F1") + "%" ?? "—");
+                item.SubItems.Add(device.Interface ?? "N/A");
+                ListNetwork.Items.Add(item);
+            }
+
+            ListNetwork.EndUpdate();
+        }
+
 
         protected override void Dispose(bool disposing)
         {
@@ -64,24 +110,13 @@ namespace Networks.Panels
         {
             return this;
         }
-
-        public void  LoadAsym(CancellationToken cancellationToken = default)
+        public void LoadIPv6Async( CancellationToken cancellationToken = default)
         {
-            _activeIPs = _scanner.ScanNetwork( Subnet);
-            _activeIPs = _activeIPs.OrderByDescending(d => d.MemoryUsedPercent).ToList();
-      
-            _logger.LogInformation("Network loaded with {Count} entries", _activeIPs.Count);
+            var _activeIPs = _ipv6Scanner.DiscoverDevicesAsync();
 
-            NetworkDataUpdated?.Invoke(this, _activeIPs);
+            _logger.LogDebug("Network loaded with {Count} IPv6 entries", _activeIPs.Count);
 
-        }
-        public async Task UpdateAsync( CancellationToken cancellationToken = default)
-        {
-            var _logs = await _scanner.ScanNetworkAsync(  _activeIPs );
-
-            _logger.LogInformation("Network loaded with {Count} entries", _logs.Count);
-
-            NetworkDataUpdated?.Invoke(this, _logs);
+            _devices.Add(_activeIPs);
         }
 
         private void SetupListView()
@@ -96,53 +131,27 @@ namespace Networks.Panels
             ListNetwork.Columns.Add("Name", 100, HorizontalAlignment.Left);
             ListNetwork.Columns.Add("Uptime", 100, HorizontalAlignment.Left);
             ListNetwork.Columns.Add("Mem Usage (%)", 100, HorizontalAlignment.Left);
-
+            ListNetwork.Columns.Add("Interface", 100, HorizontalAlignment.Left);
         }
-        private void NetworkData(object? e, List<NetworkDevice> logs)
+
+        private void PopulateInterfaces()
         {
             if (InvokeRequired)
             {
-                Invoke(new Action(() => NetworkData(e, logs)));
+                Invoke(new Action(PopulateInterfaces));
                 return;
             }
+            Interfaces.Items.Clear();
+            Interfaces.Items.Add("All Interfaces");
+            Interfaces.SelectedIndex = 0;
 
-            ListNetwork.BeginUpdate();
-            ListNetwork.SuspendLayout();
-
-            foreach (var log in logs)
+            foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
             {
-                var existingItem = ListNetwork.Items.Cast<ListViewItem>().FirstOrDefault(i => i.SubItems[0].Text == log.IPAddress.ToString() );
-                if (existingItem != null && !string.IsNullOrEmpty(existingItem.Text))
-                {
-                    if ( string.IsNullOrEmpty(log.Uptime))
-                    {
-                        int i = existingItem.Index;
-                        ListNetwork.Items.RemoveAt(i);
-                        continue;
-                    }
-                    if (!string.IsNullOrEmpty(log.HostName)) existingItem.SubItems[1].Text = log.HostName;
-                    if (!string.IsNullOrEmpty(log.Uptime)) existingItem.SubItems[2].Text = log.Uptime;
-                    existingItem.SubItems[3].Text = log.MemoryUsedPercent.ToString();
-                    existingItem.BackColor = log.MemoryUsedPercent < 80 ? Color.LightGreen : Color.MistyRose;
-                }
-                else
-                {
-                    if (string.IsNullOrEmpty(log.Uptime)) continue;
+                if (ni.OperationalStatus != OperationalStatus.Up || ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                    continue;
 
-                    var item = new ListViewItem(log.IPAddress.ToString());
-                    item.SubItems.Add(log.HostName ?? string.Empty);
-                    item.SubItems.Add(log.Uptime ?? string.Empty);
-                    item.SubItems.Add(log.MemoryUsedPercent.ToString());
-
-                    item.BackColor = log.MemoryUsedPercent < 80 ? Color.LightGreen : Color.MistyRose;
-
-                    log.Index = ListNetwork.Items.Count - 1;
-                    ListNetwork.Items.Add(item);
-                }
+                Interfaces.Items.Add(ni.Name);
             }
-
-            ListNetwork.ResumeLayout();
-            ListNetwork.EndUpdate();
         }
     }
 }
